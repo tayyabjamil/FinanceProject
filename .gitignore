@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node / Expo (FinanceApp)
+FinanceApp/node_modules/
+FinanceApp/.expo/
+FinanceApp/dist/
+FinanceApp/.env
+FinanceApp/.env.local
+FinanceApp/.env*.local
+
+# Supabase
+supabase/.temp/
+.supabase/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
