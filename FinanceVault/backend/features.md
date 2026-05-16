@@ -30,9 +30,9 @@
 
 | Feature | Status | Migration | Notes |
 |---------|--------|-----------|-------|
-| `transactions` table | `in-progress` | `20250101000001_transactions.sql` | user_id FK, type, amount, merchant, category, date, notes |
-| Row Level Security on transactions | `in-progress` | `20250101000001_transactions.sql` | Full CRUD policies per user |
-| `user_id + date` index | `in-progress` | `20250101000001_transactions.sql` | Optimises listing transactions by recency |
+| `transactions` table | `done` | `20250101000001_transactions.sql` | Applied via Supabase dashboard SQL editor |
+| Row Level Security on transactions | `done` | `20250101000001_transactions.sql` | Full CRUD policies per user |
+| `user_id + date` index | `done` | `20250101000001_transactions.sql` | Applied |
 
 ---
 
@@ -49,8 +49,8 @@
 
 | Feature | Status | Migration | Notes |
 |---------|--------|-----------|-------|
-| `pdf_uploads` table | `in-progress` | `20250101000002_pdf_uploads.sql` | Tracks uploaded PDFs; status: pending/processing/done/failed; stores transaction_count and error_message |
-| Row Level Security on pdf_uploads | `in-progress` | `20250101000002_pdf_uploads.sql` | Users can select/insert their own rows; edge function uses service role for updates |
+| `pdf_uploads` table | `done` | `20250101000002_pdf_uploads.sql` | Applied via Supabase dashboard SQL editor |
+| Row Level Security on pdf_uploads | `done` | `20250101000002_pdf_uploads.sql` | Users can select/insert their own rows; edge function uses service role for updates |
 
 ---
 
@@ -58,7 +58,7 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `bank-statements` bucket | `in-progress` | Created via migration `20250101000003_storage_buckets.sql`; private, PDF-only, 10MB limit, RLS scoped to `{user_id}/` folder |
+| `bank-statements` bucket | `done` | Created via migration `20250101000003_storage_buckets.sql`; private, PDF-only, 10MB limit, RLS scoped to `{user_id}/` folder |
 
 ---
 
@@ -66,7 +66,7 @@
 
 | Function | Status | File | Notes |
 |----------|--------|------|-------|
-| `process-pdf` | `in-progress` | `supabase/functions/process-pdf/index.ts` | Downloads PDF from Storage → Claude API extracts transactions → inserts into transactions table. Requires `ANTHROPIC_API_KEY` secret. See `edge-functions.md` for full docs. |
+| `process-pdf` | `done` | `supabase/functions/process-pdf/index.ts` | Deployed via Supabase dashboard. Downloads PDF → Claude API extracts transactions → inserts into DB. `ANTHROPIC_API_KEY` secret set. |
 
 ---
 

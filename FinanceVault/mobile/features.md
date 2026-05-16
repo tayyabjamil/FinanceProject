@@ -35,11 +35,10 @@
 
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
-| Add transaction (type, amount, merchant, category, date, notes) | `done` | `main` | |
+| Add transaction (type, amount, merchant, category, date, notes) | `done` | `feat/-pdf-upload` | Now saves to Supabase `transactions` table |
 | List / search / filter transactions | `done` | `main` | Filter by type and category |
-| Local AsyncStorage persistence | `done` | `main` | Temporary; to be replaced by Supabase |
-| Sync transactions to Supabase | `planned` | — | Migration: local → `transactions` table |
-| PDF bank statement upload & parse | `in-progress` | `feat/-pdf-upload` | Replaces TrueLayer OAuth; UI done — tab added, expo-document-picker + expo-file-system integrated, files saved to app document directory |
+| Sync transactions to Supabase | `done` | `feat/-pdf-upload` | `lib/transactions.ts` migrated from AsyncStorage to Supabase; `addTransaction` also writes to Supabase |
+| PDF bank statement upload & parse | `done` | `feat/-pdf-upload` | Full flow working: pick PDF → Storage → edge function → Claude API → transactions inserted |
 
 ---
 
@@ -48,7 +47,7 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | TrueLayer OpenBanking OAuth | `shelved` | `feat/openbankapis` | Blocked by deep-link redirect issue |
-| PDF upload approach | `in-progress` | `feat/-pdf-upload` | Upload tab live; picks PDF, copies to app storage, lists uploaded files with delete |
+| PDF upload approach | `done` | `feat/-pdf-upload` | Full end-to-end flow working; upload history shows status per file |
 
 ---
 
@@ -64,7 +63,7 @@
 
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
-| Tab bar reduced to 3 tabs (Home, Upload PDF, Profile) | `done` | `feat/-pdf-upload` | Removed Payments, AI, Analytics tabs from tab bar; hidden via `href: null` |
+| Tab bar — 4 tabs (Home, Upload PDF, Transactions, Profile) | `done` | `feat/-pdf-upload` | Transactions tab added and now live; fetches from Supabase |
 
 ---
 

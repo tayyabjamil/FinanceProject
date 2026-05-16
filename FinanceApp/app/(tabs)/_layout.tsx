@@ -49,7 +49,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.fill" color={color} />,
         }}
       />
-      <Tabs.Screen name="transactions" options={{ href: null }} />
+      <Tabs.Screen
+        name="transactions"
+        options={{
+          title: 'Transactions',
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="list.bullet" color={color} />,
+        }}
+      />
       <Tabs.Screen name="chat" options={{ href: null }} />
       <Tabs.Screen name="insights" options={{ href: null }} />
     </Tabs>

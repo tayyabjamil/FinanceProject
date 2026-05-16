@@ -4,4 +4,4 @@
 |--------|--------|---------|
 | `main` | active | Production migrations — `profiles` table live |
 | `feat/transactions-supabase` | planned | Add `transactions` table migration + update mobile to read/write from Supabase |
-| `feat/-pdf-upload` | in-progress | pdf_uploads migration, bank-statements Storage bucket, process-pdf edge function |
+| `feat/-pdf-upload` | done | All migrations applied, Storage bucket live, process-pdf deployed, ANTHROPIC_API_KEY set. Full PDF → transactions pipeline working. |
