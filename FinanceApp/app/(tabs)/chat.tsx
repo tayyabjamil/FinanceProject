@@ -13,8 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { R } from '@/constants/theme';
-
-type Msg = { role: 'user' | 'ai'; text: string; ts: Date };
+import type { ChatMessage } from '@/types';
 
 const SUGGESTIONS = [
   'Why am I overspending?',
@@ -25,7 +24,7 @@ const SUGGESTIONS = [
 
 export default function ChatScreen() {
   const [text, setText] = useState('');
-  const [messages, setMessages] = useState<Msg[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'ai', text: 'Hey! I\'m your AI finance assistant. Ask me anything about your spending, budgets, or savings goals.', ts: new Date() },
   ]);
   const listRef = useRef<FlatList>(null);

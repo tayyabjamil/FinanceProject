@@ -1,17 +1,7 @@
 import { getItem, setItem } from './storage';
+import type { Transaction } from '@/types';
 
-export type TransactionType = 'income' | 'expense';
-export type TransactionCategory = 'food' | 'transport' | 'shopping' | 'bills' | 'rent' | 'salary' | 'other';
-
-export type Transaction = {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  merchant: string;
-  category: TransactionCategory;
-  date: string; // ISO
-  notes?: string;
-};
+export type { Transaction, TransactionCategory, TransactionType } from '@/types';
 
 const KEY = 'financeai.transactions';
 

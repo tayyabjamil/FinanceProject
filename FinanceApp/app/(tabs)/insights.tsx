@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/screen';
 import { R } from '@/constants/theme';
+import type { CategoryBar } from '@/types';
 
-type Bar = { label: string; pct: number; color: string };
-
-const BREAKDOWN: Bar[] = [
+const BREAKDOWN: CategoryBar[] = [
   { label: 'Food', pct: 32, color: '#FF9F43' },
   { label: 'Bills', pct: 25, color: R.accent },
   { label: 'Shopping', pct: 18, color: '#00C896' },

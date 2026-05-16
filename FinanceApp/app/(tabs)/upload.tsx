@@ -1,6 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
-import React, { useState } from 'react';
+import { File } from 'expo-file-system';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,19 +14,31 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { R } from '@/constants/theme';
-
-interface UploadedFile {
-  name: string;
-  size: number;
-  uri: string;
-  uploadedAt: Date;
-}
+import { supabase } from '@/lib/supabase';
+import type { PdfUpload, UploadStatus } from '@/types';
 
 export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [uploads, setUploads] = useState<PdfUpload[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
-  const pickPDF = async () => {
+  useEffect(() => {
+    fetchUploads();
+  }, []);
+
+  const fetchUploads = async () => {
+    const { data } = await supabase
+      .from('pdf_uploads')
+      .select('id, file_name, status, transaction_count, error_message, created_at')
+      .neq('status', 'failed')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (data) setUploads(data as PdfUpload[]);
+    setLoadingHistory(false);
+  };
+
+  const pickAndUpload = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'application/pdf',
@@ -39,65 +51,106 @@ export default function UploadScreen() {
       const asset = result.assets[0];
       setUploading(true);
 
-      // Copy to app's document directory for persistence
-      const destDir = FileSystem.documentDirectory + 'pdfs/';
-      const dirInfo = await FileSystem.getInfoAsync(destDir);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+      // 1. Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      // 2. Upload PDF to Supabase Storage
+      const storagePath = `${user.id}/${Date.now()}_${asset.name}`;
+      const file = new File(asset.uri);
+      const arrayBuffer = await file.arrayBuffer();
+      const byteArray = new Uint8Array(arrayBuffer);
+
+      const { error: storageError } = await supabase.storage
+        .from('bank-statements')
+        .upload(storagePath, byteArray, {
+          contentType: 'application/pdf',
+          upsert: false,
+        });
+
+      if (storageError) throw new Error(`Storage upload failed: ${storageError.message}`);
+
+      // 3. Insert pdf_uploads row
+      const { data: uploadRow, error: dbError } = await supabase
+        .from('pdf_uploads')
+        .insert({ user_id: user.id, file_name: asset.name, storage_path: storagePath })
+        .select('id')
+        .single();
+
+      if (dbError || !uploadRow) throw new Error('Failed to create upload record');
+
+      // Optimistically show as pending
+      setUploads((prev) => [
+        {
+          id: uploadRow.id,
+          file_name: asset.name,
+          status: 'pending',
+          transaction_count: null,
+          error_message: null,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+
+      // 4. Call Edge Function to process PDF
+      const fnRes = await supabase.functions.invoke('process-pdf', {
+        body: { upload_id: uploadRow.id, storage_path: storagePath },
+      });
+
+      if (fnRes.error) {
+        let detail = fnRes.error.message;
+        try {
+          const body = await (fnRes.error as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {}
+        throw new Error(`Edge function: ${detail}`);
       }
 
-      const destPath = destDir + asset.name;
-      await FileSystem.copyAsync({ from: asset.uri, to: destPath });
-
-      const newFile: UploadedFile = {
-        name: asset.name,
-        size: asset.size ?? 0,
-        uri: destPath,
-        uploadedAt: new Date(),
-      };
-
-      setFiles((prev) => [newFile, ...prev]);
-    } catch {
-      Alert.alert('Error', 'Failed to upload PDF. Please try again.');
+      // 5. Refresh list to get final status
+      await fetchUploads();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong';
+      Alert.alert('Upload Failed', message);
+      await fetchUploads();
     } finally {
       setUploading(false);
     }
   };
 
-  const deleteFile = (uri: string) => {
-    Alert.alert('Remove File', 'Remove this file from the list?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          await FileSystem.deleteAsync(uri, { idempotent: true });
-          setFiles((prev) => prev.filter((f) => f.uri !== uri));
-        },
-      },
-    ]);
+  const statusLabel: Record<UploadStatus, string> = {
+    pending: 'Queued',
+    processing: 'Extracting...',
+    done: 'Done',
+    failed: 'Failed',
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const statusColor: Record<UploadStatus, string> = {
+    pending: R.textSecondary,
+    processing: R.warning,
+    done: R.income,
+    failed: R.expense,
   };
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Upload PDF</Text>
-        <Text style={styles.subtitle}>Import bank statements or receipts</Text>
+        <Text style={styles.subtitle}>Import bank statements — transactions extracted automatically</Text>
 
         <TouchableOpacity
           style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
-          onPress={pickPDF}
+          onPress={pickAndUpload}
           disabled={uploading}
           activeOpacity={0.8}
         >
           {uploading ? (
-            <ActivityIndicator color={R.white} />
+            <>
+              <ActivityIndicator color={R.white} />
+              <Text style={styles.uploadButtonText}>Processing...</Text>
+            </>
           ) : (
             <>
               <IconSymbol name="arrow.up.doc.fill" size={28} color={R.white} />
@@ -106,37 +159,50 @@ export default function UploadScreen() {
           )}
         </TouchableOpacity>
 
-        {files.length > 0 && (
-          <View style={styles.fileList}>
-            <Text style={styles.sectionTitle}>Uploaded Files</Text>
-            {files.map((file) => (
-              <View key={file.uri} style={styles.fileCard}>
-                <IconSymbol name="doc.fill" size={24} color={R.accent} />
+        <View style={styles.fileList}>
+          <Text style={styles.sectionTitle}>Upload History</Text>
+
+          {loadingHistory ? (
+            <ActivityIndicator color={R.accent} style={{ marginTop: 24 }} />
+          ) : uploads.length === 0 ? (
+            <View style={styles.emptyState}>
+              <IconSymbol name="doc.text.fill" size={48} color={R.textSecondary} />
+              <Text style={styles.emptyText}>No uploads yet</Text>
+              <Text style={styles.emptySubtext}>
+                Upload a bank statement PDF to automatically extract your transactions
+              </Text>
+            </View>
+          ) : (
+            uploads.map((upload) => (
+              <View key={upload.id} style={styles.fileCard}>
+                <IconSymbol
+                  name="doc.fill"
+                  size={24}
+                  color={upload.status === 'failed' ? R.expense : R.accent}
+                />
                 <View style={styles.fileInfo}>
                   <Text style={styles.fileName} numberOfLines={1}>
-                    {file.name}
+                    {upload.file_name}
                   </Text>
                   <Text style={styles.fileMeta}>
-                    {formatSize(file.size)} · {file.uploadedAt.toLocaleDateString()}
+                    {formatDate(upload.created_at)}
+                    {upload.transaction_count != null
+                      ? ` · ${upload.transaction_count} transactions`
+                      : ''}
                   </Text>
+                  {upload.error_message ? (
+                    <Text style={styles.errorText} numberOfLines={2}>
+                      {upload.error_message}
+                    </Text>
+                  ) : null}
                 </View>
-                <TouchableOpacity onPress={() => deleteFile(file.uri)} hitSlop={8}>
-                  <IconSymbol name="trash.fill" size={18} color={R.expense} />
-                </TouchableOpacity>
+                <Text style={[styles.statusBadge, { color: statusColor[upload.status] }]}>
+                  {statusLabel[upload.status]}
+                </Text>
               </View>
-            ))}
-          </View>
-        )}
-
-        {files.length === 0 && !uploading && (
-          <View style={styles.emptyState}>
-            <IconSymbol name="doc.text.fill" size={48} color={R.textSecondary} />
-            <Text style={styles.emptyText}>No PDFs uploaded yet</Text>
-            <Text style={styles.emptySubtext}>
-              Upload bank statements or receipts to get started
-            </Text>
-          </View>
-        )}
+            ))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -174,6 +240,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 6,
+    marginBottom: 40,
   },
   uploadButtonDisabled: {
     opacity: 0.6,
@@ -190,7 +257,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   fileList: {
-    marginTop: 32,
+    flex: 1,
   },
   fileCard: {
     flexDirection: 'row',
@@ -216,11 +283,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: R.textSecondary,
   },
+  errorText: {
+    fontSize: 11,
+    color: R.expense,
+    marginTop: 2,
+  },
+  statusBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   emptyState: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 80,
+    marginTop: 60,
     gap: 12,
   },
   emptyText: {

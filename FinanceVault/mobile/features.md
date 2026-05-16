@@ -39,7 +39,7 @@
 | List / search / filter transactions | `done` | `main` | Filter by type and category |
 | Local AsyncStorage persistence | `done` | `main` | Temporary; to be replaced by Supabase |
 | Sync transactions to Supabase | `planned` | — | Migration: local → `transactions` table |
-| PDF bank statement upload & parse | `in-progress` | `feat/read_pdf_file` | Replaces TrueLayer OAuth |
+| PDF bank statement upload & parse | `in-progress` | `feat/-pdf-upload` | Replaces TrueLayer OAuth; UI done — tab added, expo-document-picker + expo-file-system integrated, files saved to app document directory |
 
 ---
 
@@ -48,7 +48,23 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | TrueLayer OpenBanking OAuth | `shelved` | `feat/openbankapis` | Blocked by deep-link redirect issue |
-| PDF upload approach | `in-progress` | `feat/read_pdf_file` | Active alternative to OAuth |
+| PDF upload approach | `in-progress` | `feat/-pdf-upload` | Upload tab live; picks PDF, copies to app storage, lists uploaded files with delete |
+
+---
+
+## Architecture
+
+| Feature | Status | Branch | Notes |
+|---------|--------|--------|-------|
+| Central types file | `done` | `feat/-pdf-upload` | All domain types in `types/index.ts`; imported via `@/types`. Component prop types stay co-located. `lib/` files re-export for backwards compat. |
+
+---
+
+## Navigation / UI
+
+| Feature | Status | Branch | Notes |
+|---------|--------|--------|-------|
+| Tab bar reduced to 3 tabs (Home, Upload PDF, Profile) | `done` | `feat/-pdf-upload` | Removed Payments, AI, Analytics tabs from tab bar; hidden via `href: null` |
 
 ---
 

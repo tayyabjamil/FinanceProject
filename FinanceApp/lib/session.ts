@@ -1,26 +1,9 @@
 import { supabase } from './supabase';
 import { apolloClient } from './apollo';
 import { GET_PROFILE, INSERT_PROFILE, UPDATE_PROFILE } from './graphql/queries';
+import type { AppGoal, Profile, Session } from '@/types';
 
-// Union type constraining goal to the four values defined in the profiles table CHECK constraint
-export type AppGoal = 'save' | 'budget' | 'reduce_spending' | 'track_money';
-
-// Shape of a user's profile as the app consumes it — camelCase, typed
-export type Profile = {
-  name: string;
-  monthlyIncome: number; // stored as numeric in Postgres, mapped from BigFloat in GraphQL
-  goal: AppGoal;
-  currency: string; // ISO 4217 code, e.g. 'GBP'
-};
-
-// Composite session state returned to the rest of the app.
-// hasOnboarded drives routing — if false, the app redirects to the onboarding flow.
-export type Session = {
-  isLoggedIn: boolean;
-  hasOnboarded: boolean;
-  email?: string;
-  profile?: Profile; // undefined if the user hasn't completed onboarding
-};
+export type { AppGoal, Profile, Session } from '@/types';
 
 export async function getSession(): Promise<Session> {
   // getSession() reads from AsyncStorage — fast, no network request.
