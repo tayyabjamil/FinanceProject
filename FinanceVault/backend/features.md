@@ -30,9 +30,11 @@
 
 | Feature | Status | Migration | Notes |
 |---------|--------|-----------|-------|
-| `transactions` table | `in-progress` | `20250101000001_transactions.sql` | user_id FK, type, amount, merchant, category, date, notes |
-| Row Level Security on transactions | `in-progress` | `20250101000001_transactions.sql` | Full CRUD policies per user |
-| `user_id + date` index | `in-progress` | `20250101000001_transactions.sql` | Optimises listing transactions by recency |
+| `transactions` table | `done` | `20250101000001_transactions.sql` | user_id FK, type, amount, merchant, category, date, notes |
+| Row Level Security on transactions | `done` | `20250101000001_transactions.sql` | Full CRUD policies per user |
+| `user_id + date` index | `done` | `20250101000001_transactions.sql` | Applied |
+| AI enrichment columns v1 | `in-progress` | `20250101000004_ai_enrichment.sql` | Adds `merchant_clean`, `category_ai`, `is_subscription`, `enriched_at` |
+| AI enrichment columns v2 | `in-progress` | `20250101000005_ai_enrichment_v2.sql` | Adds `raw_description`, `clean_merchant`, `category_id`, `subcategory`, `ai_confidence`, `ai_processed`, `balance_after`, `source`, `upload_id`; creates `categories` lookup table |
 
 ---
 

@@ -35,11 +35,11 @@
 
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
-| Add transaction (type, amount, merchant, category, date, notes) | `done` | `main` | |
+| Add transaction (type, amount, merchant, category, date, notes) | `done` | `feat/-pdf-upload` | Saves to Supabase |
 | List / search / filter transactions | `done` | `main` | Filter by type and category |
-| Local AsyncStorage persistence | `done` | `main` | Temporary; to be replaced by Supabase |
-| Sync transactions to Supabase | `planned` | — | Migration: local → `transactions` table |
-| PDF bank statement upload & parse | `in-progress` | `feat/read_pdf_file` | Replaces TrueLayer OAuth |
+| Sync transactions to Supabase | `done` | `feat/-pdf-upload` | `lib/transactions.ts` reads/writes Supabase |
+| PDF bank statement upload & parse | `done` | `feat/-pdf-upload` | Pick PDF → Storage → edge function → Claude → DB |
+| Show AI enrichment in transactions screen | `in-progress` | `feat/AI-tables` | Display `merchant_clean`, subscription badge |
 
 ---
 
@@ -48,7 +48,7 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | TrueLayer OpenBanking OAuth | `shelved` | `feat/openbankapis` | Blocked by deep-link redirect issue |
-| PDF upload approach | `in-progress` | `feat/read_pdf_file` | Active alternative to OAuth |
+| PDF upload approach | `done` | `feat/-pdf-upload` | Full end-to-end flow working |
 
 ---
 
@@ -58,4 +58,5 @@
 |---------|--------|--------|-------|
 | Insights tab | `planned` | — | Screen exists; content TBD |
 | Chat tab | `planned` | — | Screen exists; LLM integration TBD |
-| AI-powered spend analysis | `planned` | — | Depends on transactions Supabase sync |
+| AI enrichment — merchant_clean, category_ai, is_subscription | `in-progress` | `feat/AI-tables` | Extracted at PDF parse time by Claude; stored in separate columns |
+| AI-powered spend analysis | `planned` | — | Depends on AI enrichment data |
