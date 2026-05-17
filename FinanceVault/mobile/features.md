@@ -39,7 +39,7 @@
 | List / search / filter transactions | `done` | `main` | Filter by type and category |
 | Sync transactions to Supabase | `done` | `feat/-pdf-upload` | `lib/transactions.ts` reads/writes Supabase |
 | PDF bank statement upload & parse | `done` | `feat/-pdf-upload` | Pick PDF → Storage → edge function → Claude → DB |
-| Show AI enrichment in transactions screen | `in-progress` | `feat/AI-tables` | Display `clean_merchant`, subscription badge, `ai_confidence` |
+| Show AI enrichment in transactions screen | `done` | `feat/AI-tables` | `clean_merchant ?? merchant`, `categories.label ?? category`, subscription badge (`is_subscription`). Search also matches `clean_merchant`. |
 
 ---
 
@@ -58,5 +58,5 @@
 |---------|--------|--------|-------|
 | Insights tab | `planned` | — | Screen exists; content TBD |
 | Chat tab | `planned` | — | Screen exists; LLM integration TBD |
-| AI enrichment — clean_merchant, category_id, is_subscription, ai_confidence, ai_processed | `in-progress` | `feat/AI-tables` | Migrations 000004 + 000005 written; TypeScript types updated in `types/index.ts` |
+| AI enrichment — clean_merchant, category_id, is_subscription, ai_confidence, ai_processed | `done` | `feat/AI-tables` | Full pipeline working: PDF upload → process-pdf → enrich-transactions → category_id, clean_merchant, subcategory, ai_confidence all populated. Transactions screen shows clean_merchant, category label, subscription badge. |
 | AI-powered spend analysis | `planned` | — | Depends on AI enrichment data |

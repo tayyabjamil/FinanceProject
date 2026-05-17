@@ -33,8 +33,8 @@
 | `transactions` table | `done` | `20250101000001_transactions.sql` | user_id FK, type, amount, merchant, category, date, notes |
 | Row Level Security on transactions | `done` | `20250101000001_transactions.sql` | Full CRUD policies per user |
 | `user_id + date` index | `done` | `20250101000001_transactions.sql` | Applied |
-| AI enrichment columns v1 | `in-progress` | `20250101000004_ai_enrichment.sql` | Adds `merchant_clean`, `category_ai`, `is_subscription`, `enriched_at` |
-| AI enrichment columns v2 | `in-progress` | `20250101000005_ai_enrichment_v2.sql` | Adds `raw_description`, `clean_merchant`, `category_id`, `subcategory`, `ai_confidence`, `ai_processed`, `balance_after`, `source`, `upload_id`; creates `categories` lookup table |
+| AI enrichment columns v1 | `done` | `20250101000004_ai_enrichment.sql` | Adds `merchant_clean`, `category_ai`, `is_subscription`, `enriched_at` (legacy; superseded by v2) |
+| AI enrichment columns v2 | `done` | `20250101000005_ai_enrichment_v2.sql` | Adds `raw_description`, `clean_merchant`, `category_id`, `subcategory`, `ai_confidence`, `ai_processed`, `balance_after`, `source`, `upload_id`; creates `categories` lookup table seeded with 7 rows |
 
 ---
 
@@ -68,8 +68,8 @@
 
 | Function | Status | File | Notes |
 |----------|--------|------|-------|
-| `process-pdf` | `in-progress` | `supabase/functions/process-pdf/index.ts` | Downloads PDF → Claude extracts transactions (with `raw_description`, `balance_after`, `source=pdf_upload`, `ai_processed=false`) → inserts into DB → automatically calls `enrich-transactions` with `upload_id`. |
-| `enrich-transactions` | `in-progress` | `supabase/functions/enrich-transactions/index.ts` | Accepts `upload_id` (optional). Fetches `ai_processed=false` rows, sends batches of 50 to Claude with fixed categories list, validates each result, updates `category_id`, `clean_merchant`, `subcategory`, `is_subscription`, `ai_confidence`, `ai_processed=true`. Called automatically by `process-pdf`; can also be called standalone. |
+| `process-pdf` | `done` | `supabase/functions/process-pdf/index.ts` | Downloads PDF → Claude extracts transactions (with `raw_description`, `balance_after`, `source=pdf_upload`, `ai_processed=false`) → inserts into DB → automatically calls `enrich-transactions` with `upload_id`. |
+| `enrich-transactions` | `done` | `supabase/functions/enrich-transactions/index.ts` | Accepts `upload_id` (optional). Fetches `ai_processed=false` rows, sends batches of 10 to Claude Haiku in parallel, validates each result, updates `category_id`, `clean_merchant`, `subcategory`, `is_subscription`, `ai_confidence`, `ai_processed=true`. Called automatically by `process-pdf`; can also be called standalone from mobile. |
 
 ---
 

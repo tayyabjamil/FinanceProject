@@ -11,17 +11,16 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { R } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import type { PdfUpload, UploadStatus } from '@/types';
 
 export default function UploadScreen() {
+
   const [uploading, setUploading] = useState(false);
   const [uploads, setUploads] = useState<PdfUpload[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
-
   useEffect(() => {
     fetchUploads();
   }, []);
@@ -196,9 +195,11 @@ export default function UploadScreen() {
                     </Text>
                   ) : null}
                 </View>
-                <Text style={[styles.statusBadge, { color: statusColor[upload.status] }]}>
-                  {statusLabel[upload.status]}
-                </Text>
+                <View style={styles.cardRight}>
+                  <Text style={[styles.statusBadge, { color: statusColor[upload.status] }]}>
+                    {statusLabel[upload.status]}
+                  </Text>
+                </View>
               </View>
             ))
           )}
@@ -287,6 +288,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: R.expense,
     marginTop: 2,
+  },
+  cardRight: {
+    alignItems: 'flex-end',
+    gap: 8,
   },
   statusBadge: {
     fontSize: 11,

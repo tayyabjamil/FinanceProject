@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link } from 'expo-router';
 
-import type { Transaction, TransactionCategory, TransactionType } from '@/lib/transactions';
+import type { ListedTransaction, TransactionCategory, TransactionType } from '@/lib/transactions';
 import { listTransactions } from '@/lib/transactions';
 import { R } from '@/constants/theme';
 
@@ -37,15 +37,21 @@ export default function TransactionsScreen() {
   const [query, setQuery] = useState('');
   const [type, setType] = useState<TransactionType | 'all'>('all');
   const [category, setCategory] = useState<TransactionCategory | 'all'>('all');
-  const [items, setItems] = useState<Transaction[]>([]);
+  const [subsOnly, setSubsOnly] = useState(false);
+  const [items, setItems] = useState<ListedTransaction[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [queryFocused, setQueryFocused] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const list = await listTransactions();
-      if (cancelled) return;
-      setItems(list);
+      try {
+        const list = await listTransactions();
+        if (cancelled) return;
+        setItems(list);
+      } catch (e) {
+        if (!cancelled) setLoadError((e as Error).message);
+      }
     }
     load();
     return () => { cancelled = true; };
@@ -55,15 +61,21 @@ export default function TransactionsScreen() {
     const q = query.trim().toLowerCase();
     return items.filter((t) => {
       if (type !== 'all' && t.type !== type) return false;
-      if (category !== 'all' && t.category !== category) return false;
+      if (category !== 'all') {
+        const cat = t.categories?.name ?? t.category_ai ?? t.category;
+        if (cat !== category) return false;
+      }
+      if (subsOnly && !t.is_subscription) return false;
       if (!q) return true;
       return (
         t.merchant.toLowerCase().includes(q) ||
+        (t.clean_merchant ?? '').toLowerCase().includes(q) ||
+        (t.merchant_clean ?? '').toLowerCase().includes(q) ||
         t.category.toLowerCase().includes(q) ||
         (t.notes ?? '').toLowerCase().includes(q)
       );
     });
-  }, [items, query, type, category]);
+  }, [items, query, type, category, subsOnly]);
 
   const totalShown = useMemo(
     () => filtered.reduce((s, t) => s + (t.type === 'expense' ? -t.amount : t.amount), 0),
@@ -109,6 +121,12 @@ export default function TransactionsScreen() {
                 <Text style={[styles.chipText, type === f.id && styles.chipTextActive]}>{f.label}</Text>
               </Pressable>
             ))}
+            <Pressable
+              style={[styles.chip, subsOnly && styles.chipActive]}
+              onPress={() => setSubsOnly((v) => !v)}
+            >
+              <Text style={[styles.chipText, subsOnly && styles.chipTextActive]}>🔁 Subscriptions</Text>
+            </Pressable>
             <View style={styles.chipDivider} />
             {CATS.map((c) => (
               <Pressable
@@ -137,29 +155,47 @@ export default function TransactionsScreen() {
 
       <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          {filtered.length === 0 ? (
+          {loadError ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>⚠️</Text>
+              <Text style={styles.emptyTitle}>Failed to load</Text>
+              <Text style={styles.emptySubtitle}>{loadError}</Text>
+            </View>
+          ) : filtered.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyEmoji}>💸</Text>
               <Text style={styles.emptyTitle}>No transactions</Text>
               <Text style={styles.emptySubtitle}>Add one to get started</Text>
             </View>
           ) : (
-            filtered.map((t, i) => (
-              <View key={t.id} style={[styles.txRow, i < filtered.length - 1 && styles.txRowBorder]}>
-                <View style={styles.txIconWrap}>
-                  <Text style={{ fontSize: 20 }}>{CATEGORY_ICONS[t.category] ?? '💳'}</Text>
-                </View>
-                <View style={styles.txInfo}>
-                  <Text style={styles.txMerchant}>{t.merchant}</Text>
-                  <Text style={styles.txMeta}>
-                    {t.category} · {new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            filtered.map((t, i) => {
+              const displayName = t.clean_merchant ?? t.merchant_clean ?? t.merchant;
+              const categoryLabel = t.categories?.label ?? t.category_ai ?? t.category;
+              const categoryKey = t.categories?.name ?? t.category_ai ?? t.category;
+              return (
+                <View key={t.id} style={[styles.txRow, i < filtered.length - 1 && styles.txRowBorder]}>
+                  <View style={styles.txIconWrap}>
+                    <Text style={{ fontSize: 20 }}>{CATEGORY_ICONS[categoryKey] ?? '💳'}</Text>
+                  </View>
+                  <View style={styles.txInfo}>
+                    <View style={styles.txNameRow}>
+                      <Text style={styles.txMerchant} numberOfLines={1}>{displayName}</Text>
+                      {t.is_subscription && (
+                        <View style={styles.subBadge}>
+                          <Text style={styles.subBadgeText}>Sub</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.txMeta}>
+                      {categoryLabel} · {new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </Text>
+                  </View>
+                  <Text style={[styles.txAmount, t.type === 'expense' ? styles.negative : styles.positive]}>
+                    {t.type === 'expense' ? '-' : '+'}£{t.amount.toFixed(2)}
                   </Text>
                 </View>
-                <Text style={[styles.txAmount, t.type === 'expense' ? styles.negative : styles.positive]}>
-                  {t.type === 'expense' ? '-' : '+'}£{t.amount.toFixed(2)}
-                </Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
         <View style={{ height: 24 }} />
@@ -236,7 +272,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   txInfo: { flex: 1 },
-  txMerchant: { color: R.textPrimary, fontSize: 14, fontWeight: '600' },
+  txNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  txMerchant: { color: R.textPrimary, fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  subBadge: {
+    backgroundColor: R.accent + '22',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  subBadgeText: { color: R.accent, fontSize: 10, fontWeight: '700' },
   txMeta: { color: R.textSecondary, fontSize: 12, marginTop: 2 },
   txAmount: { fontSize: 14, fontWeight: '700' },
   positive: { color: R.income },
