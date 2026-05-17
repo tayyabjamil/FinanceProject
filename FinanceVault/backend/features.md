@@ -47,6 +47,31 @@
 
 ---
 
+## Database — PDF Uploads
+
+| Feature | Status | Migration | Notes |
+|---------|--------|-----------|-------|
+| `pdf_uploads` table | `done` | `20250101000002_pdf_uploads.sql` | Applied via Supabase dashboard SQL editor |
+| Row Level Security on pdf_uploads | `done` | `20250101000002_pdf_uploads.sql` | Users can select/insert their own rows; edge function uses service role for updates |
+
+---
+
+## Storage
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `bank-statements` bucket | `done` | Created via migration `20250101000003_storage_buckets.sql`; private, PDF-only, 10MB limit, RLS scoped to `{user_id}/` folder |
+
+---
+
+## Edge Functions
+
+| Function | Status | File | Notes |
+|----------|--------|------|-------|
+| `process-pdf` | `done` | `supabase/functions/process-pdf/index.ts` | Deployed via Supabase dashboard. Downloads PDF → Claude API extracts transactions → inserts into DB. `ANTHROPIC_API_KEY` secret set. |
+
+---
+
 ## Seed Data
 
 | Feature | Status | File | Notes |

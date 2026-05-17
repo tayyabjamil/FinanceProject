@@ -11,9 +11,19 @@ FinanceApp/.env
 FinanceApp/.env.local
 FinanceApp/.env*.local
 
+# FinanceVault
+FinanceVault/
+
+# Backend
+backend/
+
 # Supabase
 supabase/.temp/
 .supabase/
+
+# GitHub Copilot auto-generated
+.github/copilot-instructions.md
+.github/copilot-toolbox-mcp-skills-awareness.md
 
 # Editor
 .vscode/
