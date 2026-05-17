@@ -30,14 +30,15 @@ Each object must have exactly these fields:
 - category: one of exactly: food, transport, shopping, bills, rent, salary, other
 - category_ai: same enum as category — your best judgement based on the merchant, may differ from category
 - is_subscription: boolean, true if this looks like a recurring subscription (e.g. Netflix, Spotify, SaaS tools, gym)
+- balance_after: number or null, the running account balance shown after this transaction line (null if not present in the statement)
 
 If you are unsure of a category, use "other".
 If a line is a balance, fee waiver, or non-transaction entry, skip it.
 
 Example output:
 [
-  {"date":"2024-01-15","merchant":"TESCO STORES 3849","merchant_clean":"Tesco","amount":32.50,"type":"expense","category":"food","category_ai":"food","is_subscription":false},
-  {"date":"2024-01-16","merchant":"OPENAI *CHATGPT SUB","merchant_clean":"ChatGPT","amount":20.00,"type":"expense","category":"other","category_ai":"bills","is_subscription":true}
+  {"date":"2024-01-15","merchant":"TESCO STORES 3849","merchant_clean":"Tesco","amount":32.50,"type":"expense","category":"food","category_ai":"food","is_subscription":false,"balance_after":1204.50},
+  {"date":"2024-01-16","merchant":"OPENAI *CHATGPT SUB","merchant_clean":"ChatGPT","amount":20.00,"type":"expense","category":"other","category_ai":"bills","is_subscription":true,"balance_after":null}
 ]`;
 
 Deno.serve(async (req: Request) => {
@@ -153,6 +154,7 @@ Deno.serve(async (req: Request) => {
     category: string;
     category_ai: string;
     is_subscription: boolean;
+    balance_after: number | null;
   }>;
 
   try {
@@ -177,15 +179,23 @@ Deno.serve(async (req: Request) => {
     user_id: user.id,
     type: t.type,
     amount: t.amount,
-    merchant: t.merchant.slice(0, 60),
+    merchant: t.merchant.slice(0, 60),  // kept as-is for backwards compat
     category: t.category,
     date: t.date,
     notes: 'Imported from PDF',
-    // AI enrichment fields
+    // Provenance
+    source: 'pdf_upload',
+    upload_id,
+    // Raw bank description — original string before any cleaning
+    raw_description: t.merchant.slice(0, 60),
+    // AI enrichment fields populated at extract time
     merchant_clean: t.merchant_clean?.slice(0, 40) ?? null,
     category_ai: t.category_ai ?? null,
     is_subscription: t.is_subscription ?? false,
+    balance_after: t.balance_after ?? null,
     enriched_at: new Date().toISOString(),
+    // Will be set to true once a dedicated enrichment pass runs (e.g. category_id lookup)
+    ai_processed: false,
   }));
 
   const { error: insertError } = await admin.from('transactions').insert(rows);
@@ -201,7 +211,29 @@ Deno.serve(async (req: Request) => {
     .update({ status: 'done', transaction_count: rows.length })
     .eq('id', upload_id);
 
-  return json({ success: true, transaction_count: rows.length });
+  // --- Step 6: Enrich the inserted transactions ---
+  // Calls enrich-transactions to resolve category_id, clean_merchant, subcategory,
+  // is_subscription, and ai_confidence, then sets ai_processed = true on each row.
+  // Non-blocking — a failure here does not affect the PDF upload success response.
+  const enrichRes = await fetch(
+    `${SUPABASE_URL}/functions/v1/enrich-transactions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader,
+      },
+      body: JSON.stringify({ upload_id }),
+    },
+  ).catch(() => null);
+
+  const enriched = enrichRes?.ok ? await enrichRes.json().catch(() => null) : null;
+
+  return json({
+    success: true,
+    transaction_count: rows.length,
+    enrichment: enriched ?? { skipped: true },
+  });
 });
 
 // --- Helpers ---

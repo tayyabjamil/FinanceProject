@@ -68,7 +68,8 @@
 
 | Function | Status | File | Notes |
 |----------|--------|------|-------|
-| `process-pdf` | `done` | `supabase/functions/process-pdf/index.ts` | Deployed via Supabase dashboard. Downloads PDF → Claude API extracts transactions → inserts into DB. `ANTHROPIC_API_KEY` secret set. |
+| `process-pdf` | `in-progress` | `supabase/functions/process-pdf/index.ts` | Downloads PDF → Claude extracts transactions (with `raw_description`, `balance_after`, `source=pdf_upload`, `ai_processed=false`) → inserts into DB → automatically calls `enrich-transactions` with `upload_id`. |
+| `enrich-transactions` | `in-progress` | `supabase/functions/enrich-transactions/index.ts` | Accepts `upload_id` (optional). Fetches `ai_processed=false` rows, sends batches of 50 to Claude with fixed categories list, validates each result, updates `category_id`, `clean_merchant`, `subcategory`, `is_subscription`, `ai_confidence`, `ai_processed=true`. Called automatically by `process-pdf`; can also be called standalone. |
 
 ---
 

@@ -1,4 +1,4 @@
-# Upload PDFs Edge Function
+# Edge Functions
 
 ## What Is an Edge Function?
 
@@ -14,100 +14,199 @@ which keeps response times fast regardless of where the user is.
 
 | Problem | Why Edge Function solves it |
 |---------|-----------------------------|
-| **API keys must stay secret** | The Claude API key (`ANTHROPIC_API_KEY`) must never ship inside the mobile app. The edge function holds it server-side where users can't see it. |
-| **Heavy work off device** | Converting a PDF to base64 and calling an AI API is slow and battery-draining on a phone. The edge function does this server-side. |
-| **Direct DB writes** | The function uses the Supabase service role key to write to `transactions` and update `pdf_uploads` without the user needing special permissions. |
-| **No backend server needed** | We don't run Express/FastAPI/etc. Supabase handles scaling, uptime, and deployment. |
+| **API keys must stay secret** | `ANTHROPIC_API_KEY` must never ship inside the mobile app. Edge functions hold it server-side. |
+| **Heavy work off device** | PDF → base64 → Claude API is slow and battery-draining on a phone. Done server-side instead. |
+| **Direct DB writes** | Functions use the Supabase service role key to write to `transactions` and `pdf_uploads` without special user permissions. |
+| **No backend server needed** | No Express/FastAPI/etc. Supabase handles scaling, uptime, and deployment. |
 
 ---
 
-## How It Works — General
+## Full Flow
 
 ```
 Mobile App
     │
-    │  POST /functions/v1/process-pdf
-    │  Authorization: Bearer <user JWT>
-    │  Body: { upload_id, storage_path }
+    │  1. Upload PDF to Supabase Storage (bank-statements bucket)
+    │  2. POST /functions/v1/process-pdf
+    │     Authorization: Bearer <user JWT>
+    │     Body: { upload_id, storage_path }
     ▼
-Edge Function (Deno, runs on Supabase)
-    │
-    ├── Verifies the user JWT → gets user.id
-    ├── Downloads PDF from Supabase Storage
-    ├── Converts PDF to base64
-    ├── Calls Claude API → extracts transactions as JSON
-    ├── Inserts transactions into DB (service role, bypasses RLS)
-    └── Updates pdf_uploads.status to done / failed
-    │
-    ▼
-Mobile App receives { success: true, transaction_count: N }
+┌─────────────────────────────────────────────────┐
+│  process-pdf  (Deno, Supabase Edge)             │
+│                                                 │
+│  ① Verify JWT → get user.id                    │
+│  ② Mark pdf_uploads.status = processing        │
+│  ③ Download PDF from Storage                   │
+│  ④ Base64-encode PDF bytes                     │
+│  ⑤ Call Claude API → extract transactions      │
+│     Fields extracted per row:                  │
+│       date, merchant (raw), merchant_clean,    │
+│       amount, type, category, category_ai,     │
+│       is_subscription, balance_after           │
+│  ⑥ Insert rows into transactions table:        │
+│       source = 'pdf_upload'                    │
+│       upload_id = <from request>               │
+│       raw_description = merchant (raw copy)    │
+│       ai_processed = false                     │
+│  ⑦ Mark pdf_uploads.status = done / failed    │
+│  ⑧ Call enrich-transactions({ upload_id })    │
+└──────────────────┬──────────────────────────────┘
+                   │  POST /functions/v1/enrich-transactions
+                   │  Same user JWT passed through
+                   ▼
+┌─────────────────────────────────────────────────┐
+│  enrich-transactions  (Deno, Supabase Edge)     │
+│                                                 │
+│  ① Verify JWT                                  │
+│  ② Fetch categories table (fixed list —        │
+│     Claude must only pick from these)          │
+│  ③ Fetch transactions where                    │
+│       ai_processed = false                     │
+│       AND user_id = current user               │
+│       AND upload_id = <from request> (if set)  │
+│  ④ Split into batches of 50                    │
+│  ⑤ For each batch → call Claude API:           │
+│     - Pass raw_description + category list     │
+│     - Claude returns JSON array                │
+│  ⑥ Validate each Claude result:               │
+│     - transaction_id exists in batch           │
+│     - category_name exists in categories table │
+│     - confidence is 0.0 – 1.0                 │
+│     - clean_merchant is a non-empty string     │
+│     - is_subscription is boolean              │
+│  ⑦ Update each valid transaction:             │
+│       category_id  (resolved from name → id)  │
+│       clean_merchant                           │
+│       subcategory                              │
+│       is_subscription                          │
+│       ai_confidence                            │
+│       ai_processed = true                      │
+│     Invalid rows are skipped + logged          │
+└─────────────────────────────────────────────────┘
+                   │
+                   ▼
+Mobile App receives {
+  success: true,
+  transaction_count: N,
+  enrichment: { enriched: N, total: N, errors?: [...] }
+}
 ```
 
 ---
 
-## Our Function — `process-pdf`
+## Function Reference
+
+### `process-pdf`
 
 **File:** `supabase/functions/process-pdf/index.ts`
+**Trigger:** Called by mobile app after PDF is uploaded to Storage.
+**Calls:** `enrich-transactions` automatically after insert (non-blocking).
 
-**Trigger:** Called directly by the mobile app after a PDF is uploaded to Storage.
+**Request:**
+```json
+POST /functions/v1/process-pdf
+Authorization: Bearer <user JWT>
+{ "upload_id": "<uuid>", "storage_path": "<user-id>/file.pdf" }
+```
 
-**Environment variables required (set in Supabase dashboard → Edge Functions → Secrets):**
+**Response:**
+```json
+{ "success": true, "transaction_count": 12, "enrichment": { "enriched": 12, "total": 12 } }
+```
 
-| Variable | What it is |
-|----------|-----------|
-| `ANTHROPIC_API_KEY` | Claude API key — used to extract transactions from the PDF |
-| `SUPABASE_URL` | Your project URL (auto-set by Supabase) |
-| `SUPABASE_ANON_KEY` | Public anon key — used to verify the user JWT (auto-set) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Secret service key — bypasses RLS for DB writes (auto-set) |
+**Fields set on insert:**
 
-**Step-by-step what it does:**
-
-1. Authenticates the user via their JWT (so random people can't call it)
-2. Updates `pdf_uploads.status` → `processing`
-3. Downloads the PDF from the `bank-statements` Storage bucket
-4. Base64-encodes the PDF bytes
-5. Sends the PDF to `claude-opus-4-6` with a strict prompt to return a JSON array of transactions
-6. Parses Claude's response
-7. Bulk-inserts rows into the `transactions` table with `user_id` set to the authenticated user
-8. Updates `pdf_uploads.status` → `done` (or `failed` with an error message)
+| Field | Value |
+|-------|-------|
+| `merchant` | Raw bank payee string (kept for backwards compat) |
+| `raw_description` | Copy of raw payee string |
+| `merchant_clean` | Claude's cleaned name (from extraction prompt) |
+| `category` | Claude's category (text fallback) |
+| `category_ai` | Claude's AI category judgement |
+| `is_subscription` | Claude's subscription detection |
+| `balance_after` | Running balance from statement (or null) |
+| `source` | `'pdf_upload'` |
+| `upload_id` | FK → `pdf_uploads.id` |
+| `ai_processed` | `false` (set to `true` by `enrich-transactions`) |
 
 ---
 
-## How to Deploy
+### `enrich-transactions`
+
+**File:** `supabase/functions/enrich-transactions/index.ts`
+**Trigger:** Called automatically by `process-pdf`; can also be called standalone to re-enrich or catch missed rows.
+
+**Request:**
+```json
+POST /functions/v1/enrich-transactions
+Authorization: Bearer <user JWT>
+{ "upload_id": "<uuid>" }   // optional — omit to enrich all unprocessed rows for the user
+```
+
+**Response:**
+```json
+{ "success": true, "enriched": 12, "total": 12, "errors": [] }
+```
+
+**Fields written per transaction:**
+
+| Field | Source |
+|-------|--------|
+| `category_id` | Resolved from `category_name` → `categories.id` (never trusts Claude UUIDs) |
+| `clean_merchant` | Claude output, validated as non-empty string, trimmed to 40 chars |
+| `subcategory` | Claude output (nullable free-text) |
+| `is_subscription` | Claude output, validated as boolean |
+| `ai_confidence` | Claude output, validated 0.0–1.0 |
+| `ai_processed` | `true` |
+
+**Validation rules (invalid rows skipped + logged, not aborted):**
+
+| Field | Rule |
+|-------|------|
+| `transaction_id` | Must be in the current batch |
+| `category_name` | Must exactly match a name in the `categories` table |
+| `confidence` | Must be a number between 0 and 1 |
+| `clean_merchant` | Must be a non-empty string |
+| `is_subscription` | Must be boolean |
+
+---
+
+## Environment Variables
+
+| Variable | Used by | Notes |
+|----------|---------|-------|
+| `ANTHROPIC_API_KEY` | Both | Set via `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` |
+| `SUPABASE_URL` | Both | Auto-set by Supabase |
+| `SUPABASE_ANON_KEY` | Both | Auto-set by Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Both | Auto-set by Supabase |
+
+---
+
+## Deploy
 
 ```bash
-# Install Supabase CLI if not already
-brew install supabase/tap/supabase
-
-# Login
-supabase login
-
-# Link to your project (run once)
-supabase link --project-ref <your-project-ref>
-
-# Deploy the function
 supabase functions deploy process-pdf
-
-# Set the Claude API key secret
+supabase functions deploy enrich-transactions
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 ```
 
----
-
-## How to Test Locally
+## Test Locally
 
 ```bash
-# Start local Supabase stack
 supabase start
+supabase functions serve --env-file .env.local
 
-# Serve the function locally
-supabase functions serve process-pdf --env-file .env.local
-
-# Call it with curl
+# Test process-pdf
 curl -X POST http://localhost:54321/functions/v1/process-pdf \
   -H "Authorization: Bearer <user-jwt>" \
   -H "Content-Type: application/json" \
   -d '{"upload_id":"<uuid>","storage_path":"<user-id>/file.pdf"}'
+
+# Test enrich-transactions standalone
+curl -X POST http://localhost:54321/functions/v1/enrich-transactions \
+  -H "Authorization: Bearer <user-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"upload_id":"<uuid>"}'
 ```
 
 ---
@@ -115,16 +214,12 @@ curl -X POST http://localhost:54321/functions/v1/process-pdf \
 ## Status Lifecycle
 
 ```
-pending  →  processing  →  done
-                        →  failed  (error_message populated)
+pdf_uploads row:
+  pending → processing → done
+                      → failed  (error_message populated)
+
+transactions rows:
+  inserted with ai_processed=false
+      → enrich-transactions runs
+      → ai_processed=true, category_id/clean_merchant/etc populated
 ```
-
-The mobile upload screen polls / refreshes after calling the function to show the final status.
-
----
-
-## Functions Register
-
-| Function | Status | File | Purpose |
-|----------|--------|------|---------|
-| `process-pdf` | done | `supabase/functions/process-pdf/index.ts` | Extract transactions from uploaded bank statement PDF via Claude API |
