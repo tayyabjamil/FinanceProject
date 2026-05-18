@@ -133,12 +133,13 @@ RLS: users can select/insert own rows; edge function uses service role for updat
 - Full PDF upload flow — pick PDF → Supabase Storage → `process-pdf` edge function → Claude extracts transactions → saved to `transactions` table
 - All migrations applied: `profiles`, `transactions`, `pdf_uploads`, `bank-statements` bucket
 - `process-pdf` edge function deployed with `ANTHROPIC_API_KEY` secret
+- AI chat — `finance-chat` edge function + chat screen (bubble UI, suggestion chips, typing indicator)
 
 ### Active Branch
-`feat/-pdf-upload` — feature complete, ready to merge to main
+`feat/chat-bot` — AI chat feature complete (mobile UI + `finance-chat` edge function); not yet deployed or merged
 
 ### Planned / Next
-- AI chat powered by transaction data
+- Deploy `finance-chat` edge function + merge `feat/chat-bot` to main
 - Insights tab with real spend analysis
 
 ### Shelved

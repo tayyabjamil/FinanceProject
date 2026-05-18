@@ -198,7 +198,9 @@ Deno.serve(async (req: Request) => {
     ai_processed: false,
   }));
 
-  const { error: insertError } = await admin.from('transactions').insert(rows);
+  const { error: insertError } = await admin
+    .from('transactions')
+    .upsert(rows, { onConflict: 'user_id,date,amount,raw_description', ignoreDuplicates: true });
 
   if (insertError) {
     await fail(admin, upload_id, `DB insert error: ${insertError.message}`);

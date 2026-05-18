@@ -56,7 +56,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="list.bullet" color={color} />,
         }}
       />
-      <Tabs.Screen name="chat" options={{ href: null }} />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'AI Chat',
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="bubble.left.and.bubble.right.fill" color={color} />,
+        }}
+      />
       <Tabs.Screen name="insights" options={{ href: null }} />
     </Tabs>
   );

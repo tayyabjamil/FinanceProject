@@ -70,6 +70,7 @@
 |----------|--------|------|-------|
 | `process-pdf` | `done` | `supabase/functions/process-pdf/index.ts` | Downloads PDF → Claude extracts transactions (with `raw_description`, `balance_after`, `source=pdf_upload`, `ai_processed=false`) → inserts into DB → automatically calls `enrich-transactions` with `upload_id`. |
 | `enrich-transactions` | `done` | `supabase/functions/enrich-transactions/index.ts` | Accepts `upload_id` (optional). Fetches `ai_processed=false` rows, sends batches of 10 to Claude Haiku in parallel, validates each result, updates `category_id`, `clean_merchant`, `subcategory`, `is_subscription`, `ai_confidence`, `ai_processed=true`. Called automatically by `process-pdf`; can also be called standalone from mobile. |
+| `finance-chat` | `done` | `supabase/functions/finance-chat/index.ts` | Accepts `{ message }` with user JWT. Fetches user's enriched transactions (up to 300) with category join, builds compact financial summary (totals, top categories, top merchants, subscriptions), sends to Claude Haiku, returns `{ answer }`. Not yet deployed. |
 
 ---
 

@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link } from 'expo-router';
 
 import { getSession } from '@/lib/session';
-import { getItem } from '@/lib/storage';
+import { listTransactions } from '@/lib/transactions';
 import type { Transaction } from '@/lib/transactions';
 import { R } from '@/constants/theme';
 
@@ -29,12 +29,10 @@ export default function DashboardScreen() {
   const [name, setName] = useState('');
   const [income, setIncome] = useState(0);
   const [txns, setTxns] = useState<Transaction[]>([]);
-
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const session = await getSession();
-      const list = (await getItem<Transaction[]>('financeai.transactions')) ?? [];
+      const [session, list] = await Promise.all([getSession(), listTransactions().catch(() => [])]);
       if (cancelled) return;
       setName(session.profile?.name ?? '');
       setIncome(session.profile?.monthlyIncome ?? 0);
@@ -53,6 +51,15 @@ export default function DashboardScreen() {
   }, [income, txns]);
 
   const savingsProgress = Math.max(0, Math.min(1, totals.balance / Math.max(1, totals.totalIncome * 0.2)));
+
+  const txSpan = useMemo(() => {
+    if (!txns.length) return null;
+    const dates = txns.map((t) => t.date).sort();
+    const from = new Date(dates[0]);
+    const to = new Date(dates[dates.length - 1]);
+    const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
+    return `${fmt(from)} – ${fmt(to)}`;
+  }, [txns]);
   const recent = txns.slice(-5).reverse();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -120,18 +127,36 @@ export default function DashboardScreen() {
           </Text>
         </View>
 
-        {/* AI tip */}
-        <View style={styles.tipCard}>
-          <View style={styles.tipIcon}>
-            <Text style={{ fontSize: 18 }}>✨</Text>
+        {/* Summary insight card */}
+        {txns.length > 0 && (
+          <View style={styles.tipCard}>
+            <View style={styles.tipIcon}>
+              <Text style={{ fontSize: 18 }}>✨</Text>
+            </View>
+            <View style={styles.tipContent}>
+              <Text style={styles.tipTitle}>SUMMARY</Text>
+              {txSpan && <Text style={styles.tipSpan}>{txSpan}</Text>}
+              <View style={styles.tipRow}>
+                <View style={styles.tipStat}>
+                  <Text style={styles.tipStatLabel}>Earned</Text>
+                  <Text style={[styles.tipStatValue, { color: R.income }]}>£{Math.round(totals.totalIncome).toLocaleString()}</Text>
+                </View>
+                <View style={styles.tipDivider} />
+                <View style={styles.tipStat}>
+                  <Text style={styles.tipStatLabel}>Spent</Text>
+                  <Text style={[styles.tipStatValue, { color: R.expense }]}>£{Math.round(totals.expenses).toLocaleString()}</Text>
+                </View>
+                <View style={styles.tipDivider} />
+                <View style={styles.tipStat}>
+                  <Text style={styles.tipStatLabel}>Saved</Text>
+                  <Text style={[styles.tipStatValue, { color: totals.balance >= 0 ? R.income : R.expense }]}>
+                    £{Math.round(totals.balance).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
-          <View style={styles.tipContent}>
-            <Text style={styles.tipTitle}>AI insight</Text>
-            <Text style={styles.tipText}>
-              Reduce discretionary spend by £{Math.round(totals.expenses * 0.05)} this week to hit your savings goal.
-            </Text>
-          </View>
-        </View>
+        )}
 
         {/* Recent transactions */}
         <View style={styles.sectionHeader}>
@@ -290,8 +315,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tipContent: { flex: 1 },
-  tipTitle: { color: R.accent, fontSize: 12, fontWeight: '700', marginBottom: 4 },
-  tipText: { color: R.textSecondary, fontSize: 13, lineHeight: 18 },
+  tipTitle: { color: R.accent, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, marginBottom: 2 },
+  tipSpan: { color: R.textMuted, fontSize: 11, marginBottom: 10 },
+  tipRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  tipStat: { flex: 1, alignItems: 'center' },
+  tipStatLabel: { color: R.textSecondary, fontSize: 11, marginBottom: 2 },
+  tipStatValue: { fontSize: 15, fontWeight: '700' },
+  tipDivider: { width: 1, height: 28, backgroundColor: R.border },
 
   sectionHeader: {
     flexDirection: 'row',

@@ -57,6 +57,6 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | Insights tab | `planned` | — | Screen exists; content TBD |
-| Chat tab | `planned` | — | Screen exists; LLM integration TBD |
+| Chat tab | `done` | `feat/chat-bot` | Full chat UI with bubble layout, suggestion chips, typing indicator; calls `finance-chat` edge function with user JWT |
 | AI enrichment — clean_merchant, category_id, is_subscription, ai_confidence, ai_processed | `done` | `feat/AI-tables` | Full pipeline working: PDF upload → process-pdf → enrich-transactions → category_id, clean_merchant, subcategory, ai_confidence all populated. Transactions screen shows clean_merchant, category label, subscription badge. |
 | AI-powered spend analysis | `planned` | — | Depends on AI enrichment data |
