@@ -171,6 +171,58 @@ Authorization: Bearer <user JWT>
 
 ---
 
+---
+
+### `finance-chat`
+
+**File:** `supabase/functions/finance-chat/index.ts`
+**Trigger:** Called by mobile chat screen with user message.
+
+**Request:**
+```json
+POST /functions/v1/finance-chat
+Authorization: Bearer <user JWT>
+{ "message": "Where did my money go?" }
+```
+
+**Response:**
+```json
+{ "answer": "Your biggest category was Food at £234.50 across 12 transactions..." }
+```
+
+**Flow:**
+1. Auth user via JWT
+2. Fetch up to 500 enriched transactions (with `categories` join) in one DB call
+3. **Turn 1** — send user message + 6 tool definitions to Claude Haiku → Claude picks the right tool(s) based on intent
+4. Execute tool(s) — targeted in-memory aggregation on the fetched transactions
+5. **Turn 2** — send tool results back to Claude → Claude generates final answer
+
+**Tools:**
+
+| Tool | Intent |
+|------|--------|
+| `get_overview` | General balance/summary questions |
+| `get_category_breakdown` | "Where did my money go?" |
+| `get_top_merchants` | "Where do I spend the most?" |
+| `get_subscriptions` | "What subscriptions do I have?" |
+| `get_recent_transactions` | Recent activity, optionally filtered by category |
+| `get_largest_expenses` | "What were my biggest purchases?" |
+
+**Console logs (visible in `supabase functions logs finance-chat --tail`):**
+- User ID, message, transaction count fetched
+- Turn 1 stop reason
+- Which tools were called with what inputs
+- Tool result payloads (first 300 chars)
+- Turn 2 stop reason
+
+**Debug locally with breakpoints:**
+```bash
+supabase functions serve finance-chat --inspect-mode brk --env-file supabase/.env.local
+# Then open chrome://inspect → add localhost:8083
+```
+
+---
+
 ## Environment Variables
 
 | Variable | Used by | Notes |
@@ -187,6 +239,7 @@ Authorization: Bearer <user JWT>
 ```bash
 supabase functions deploy process-pdf
 supabase functions deploy enrich-transactions
+supabase functions deploy finance-chat
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 ```
 

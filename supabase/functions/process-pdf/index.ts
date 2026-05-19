@@ -58,8 +58,10 @@ Deno.serve(async (req: Request) => {
 
   const { data: { user }, error: authError } = await userClient.auth.getUser();
   if (authError || !user) {
+    console.log('[process-pdf][auth] FAIL:', authError?.message);
     return json({ error: 'Unauthorized' }, 401);
   }
+  console.log('[process-pdf][auth] ok — user:', user.id);
 
   // Service role client — bypasses RLS for DB writes
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -75,6 +77,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: 'Request body must contain upload_id and storage_path' }, 400);
   }
+  console.log(`[process-pdf][request] upload_id=${upload_id} storage_path=${storage_path}`);
 
   // Mark as processing
   await admin
@@ -82,6 +85,7 @@ Deno.serve(async (req: Request) => {
     .update({ status: 'processing' })
     .eq('id', upload_id)
     .eq('user_id', user.id);
+  console.log('[process-pdf][db] pdf_uploads → processing');
 
   // --- Step 1: Download PDF from Storage ---
   const { data: fileBlob, error: downloadError } = await admin.storage
@@ -89,9 +93,11 @@ Deno.serve(async (req: Request) => {
     .download(storage_path);
 
   if (downloadError || !fileBlob) {
+    console.log('[process-pdf][storage] download FAIL:', downloadError?.message);
     await fail(admin, upload_id, 'Failed to download PDF from storage');
     return json({ error: 'Storage download failed' }, 500);
   }
+  console.log('[process-pdf][storage] download ok — size:', fileBlob.size, 'bytes');
 
   // Convert to base64
   const arrayBuffer = await fileBlob.arrayBuffer();
@@ -101,8 +107,10 @@ Deno.serve(async (req: Request) => {
     binary += String.fromCharCode(bytes[i]);
   }
   const base64Pdf = btoa(binary);
+  console.log('[process-pdf][base64] encoded — length:', base64Pdf.length);
 
   // --- Step 2: Call Claude API ---
+  console.log('[process-pdf][claude] sending PDF to Claude for extraction...');
   const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -137,12 +145,14 @@ Deno.serve(async (req: Request) => {
 
   if (!claudeRes.ok) {
     const errText = await claudeRes.text();
+    console.log(`[process-pdf][claude] FAIL ${claudeRes.status}:`, errText.slice(0, 300));
     await fail(admin, upload_id, `Claude API error: ${claudeRes.status} ${errText}`);
     return json({ error: 'Claude API failed' }, 502);
   }
 
   const claudeData = await claudeRes.json();
   const rawText: string = claudeData.content?.[0]?.text?.trim() ?? '';
+  console.log('[process-pdf][claude] raw response (first 500 chars):', rawText.slice(0, 500));
 
   // --- Step 3: Parse extracted transactions ---
   let transactions: Array<{
@@ -161,12 +171,15 @@ Deno.serve(async (req: Request) => {
     const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
     transactions = JSON.parse(cleaned);
     if (!Array.isArray(transactions)) throw new Error('Not an array');
-  } catch {
+  } catch (e) {
+    console.log('[process-pdf][parse] FAIL:', (e as Error).message, '| raw:', rawText.slice(0, 200));
     await fail(admin, upload_id, `Could not parse Claude response: ${rawText.slice(0, 200)}`);
     return json({ error: 'Failed to parse Claude response' }, 500);
   }
+  console.log(`[process-pdf][parse] ok — ${transactions.length} transactions extracted. First:`, JSON.stringify(transactions[0] ?? null));
 
   if (transactions.length === 0) {
+    console.log('[process-pdf][parse] no transactions found — marking done');
     await admin
       .from('pdf_uploads')
       .update({ status: 'done', transaction_count: 0 })
@@ -198,20 +211,24 @@ Deno.serve(async (req: Request) => {
     ai_processed: false,
   }));
 
+  console.log(`[process-pdf][db] upserting ${rows.length} rows (duplicates will be skipped)...`);
   const { error: insertError } = await admin
     .from('transactions')
     .upsert(rows, { onConflict: 'user_id,date,amount,raw_description', ignoreDuplicates: true });
 
   if (insertError) {
+    console.log('[process-pdf][db] upsert FAIL:', insertError.message);
     await fail(admin, upload_id, `DB insert error: ${insertError.message}`);
     return json({ error: 'Failed to save transactions' }, 500);
   }
+  console.log('[process-pdf][db] upsert ok');
 
   // --- Step 5: Mark upload as done ---
   await admin
     .from('pdf_uploads')
     .update({ status: 'done', transaction_count: rows.length })
     .eq('id', upload_id);
+  console.log(`[process-pdf][db] pdf_uploads → done | transaction_count=${rows.length}`);
 
   // --- Step 6: Enrich the inserted transactions ---
   // Calls enrich-transactions to resolve category_id, clean_merchant, subcategory,
@@ -230,6 +247,7 @@ Deno.serve(async (req: Request) => {
   ).catch(() => null);
 
   const enriched = enrichRes?.ok ? await enrichRes.json().catch(() => null) : null;
+  console.log('[process-pdf][enrich] result:', JSON.stringify(enriched));
 
   return json({
     success: true,

@@ -53,7 +53,7 @@ export default function ChatScreen() {
       if (!session) throw new Error('Not logged in');
 
       const res = await fetch(
-        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finance-chat`,
+        process.env.EXPO_PUBLIC_FINANCE_CHAT_URL ?? `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finance-chat`,
         {
           method: 'POST',
           headers: {
