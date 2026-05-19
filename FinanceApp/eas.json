@@ -1,0 +1,38 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "requireCommit": true
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Release"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://fkkemlinsticznjmeycd.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZra2VtbGluc3RpY3puam1leWNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMjk5NTAsImV4cCI6MjA5MzkwNTk1MH0.n018xlY1hUVcXkgbREgwW8_XcghvfZagscvo5g8pyhM",
+        "EXPO_PUBLIC_FINANCE_CHAT_URL": "https://fkkemlinsticznjmeycd.supabase.co/functions/v1/finance-chat",
+        "EXPO_PUBLIC_PROCESS_PDF_URL": "https://fkkemlinsticznjmeycd.supabase.co/functions/v1/process-pdf"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6771025903",
+        "appleTeamId": "3ZZTDYP4ZM"
+      }
+    }
+  }
+}
