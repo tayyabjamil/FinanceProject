@@ -1,4 +1,4 @@
-import type { Transaction } from '@/types';
+import type { Transaction, NewTransaction } from '@/types';
 import { supabase } from './supabase';
 
 export type { Transaction, TransactionCategory, TransactionType } from '@/types';
@@ -23,7 +23,7 @@ export async function listTransactions(): Promise<ListedTransaction[]> {
   return ((data as unknown) as ListedTransaction[]) ?? [];
 }
 
-export async function addTransaction(input: Omit<Transaction, 'id'>): Promise<Transaction> {
+export async function addTransaction(input: NewTransaction): Promise<Transaction> {
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('transactions')
