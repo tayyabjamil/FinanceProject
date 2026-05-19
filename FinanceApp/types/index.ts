@@ -59,7 +59,7 @@ export type Transaction = {
 // Minimal shape used when inserting a new transaction (omits DB-generated fields)
 export type NewTransaction = Omit<
   Transaction,
-  'id' | 'created_at' | 'updated_at' | 'ai_processed' | 'is_subscription' | 'source'
+  'id' | 'user_id' | 'created_at' | 'updated_at' | 'ai_processed' | 'is_subscription' | 'source'
 > & {
   source?: TransactionSource;
   is_subscription?: boolean;
