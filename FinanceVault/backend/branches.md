@@ -3,5 +3,6 @@
 | Branch | Status | Purpose |
 |--------|--------|---------|
 | `main` | active | Production migrations — `profiles` table live |
-| `feat/transactions-supabase` | planned | Add `transactions` table migration + update mobile to read/write from Supabase |
-| `feat/-pdf-upload` | done | All migrations applied, Storage bucket live, process-pdf deployed, ANTHROPIC_API_KEY set. Full PDF → transactions pipeline working. |
+| `feat/-pdf-upload` | done | pdf_uploads table, bank-statements bucket, process-pdf edge function deployed |
+| `feat/AI-tables` | in-progress | Migrations 000004 + 000005 — AI enrichment columns + categories table on transactions; edge function prompt updated; TypeScript types updated |
+| `feat/chat-bot` | in-progress | `finance-chat` edge function — fetches user transactions, builds financial summary, calls Claude Haiku, returns AI answer; feature complete, not yet deployed |

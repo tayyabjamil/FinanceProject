@@ -19,6 +19,7 @@ backend/
 
 # Supabase
 supabase/.temp/
+supabase/.env.local
 .supabase/
 
 # GitHub Copilot auto-generated

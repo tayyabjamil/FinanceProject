@@ -14,6 +14,7 @@ values (
 on conflict (id) do nothing;
 
 -- Users can upload to their own folder only
+drop policy if exists "Users can upload their own PDFs" on storage.objects;
 create policy "Users can upload their own PDFs"
   on storage.objects for insert
   with check (
@@ -22,6 +23,7 @@ create policy "Users can upload their own PDFs"
   );
 
 -- Users can read their own PDFs
+drop policy if exists "Users can read their own PDFs" on storage.objects;
 create policy "Users can read their own PDFs"
   on storage.objects for select
   using (
@@ -30,6 +32,7 @@ create policy "Users can read their own PDFs"
   );
 
 -- Users can delete their own PDFs
+drop policy if exists "Users can delete their own PDFs" on storage.objects;
 create policy "Users can delete their own PDFs"
   on storage.objects for delete
   using (

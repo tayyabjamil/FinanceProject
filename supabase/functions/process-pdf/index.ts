@@ -6,7 +6,7 @@
  *   2. Function authenticates the user via their JWT
  *   3. Downloads the PDF from Supabase Storage (bank-statements bucket)
  *   4. Sends the PDF to Claude API as a base64 document
- *   5. Claude extracts all transactions as a JSON array
+ *   5. Claude extracts all transactions + AI enrichment fields as a JSON array
  *   6. Transactions are bulk-inserted into the transactions table
  *   7. pdf_uploads row is updated to done/failed with transaction count
  */
@@ -23,18 +23,22 @@ const EXTRACTION_PROMPT = `Extract every transaction from this bank statement PD
 Return ONLY a valid JSON array — no markdown, no explanation, no extra text.
 Each object must have exactly these fields:
 - date: string, format YYYY-MM-DD
-- merchant: string, the payee or description (max 60 characters)
+- merchant: string, raw payee name from the statement (max 60 characters)
+- merchant_clean: string, human-readable merchant name e.g. "ChatGPT" not "OPENAI *CHATGPT SU", "Tesco" not "TESCO STORES 3849" (max 40 characters)
 - amount: number, always positive
 - type: "income" or "expense"
 - category: one of exactly: food, transport, shopping, bills, rent, salary, other
+- category_ai: same enum as category — your best judgement based on the merchant, may differ from category
+- is_subscription: boolean, true if this looks like a recurring subscription (e.g. Netflix, Spotify, SaaS tools, gym)
+- balance_after: number or null, the running account balance shown after this transaction line (null if not present in the statement)
 
 If you are unsure of a category, use "other".
 If a line is a balance, fee waiver, or non-transaction entry, skip it.
 
 Example output:
 [
-  {"date":"2024-01-15","merchant":"Tesco","amount":32.50,"type":"expense","category":"food"},
-  {"date":"2024-01-16","merchant":"Salary Jan","amount":2500.00,"type":"income","category":"salary"}
+  {"date":"2024-01-15","merchant":"TESCO STORES 3849","merchant_clean":"Tesco","amount":32.50,"type":"expense","category":"food","category_ai":"food","is_subscription":false,"balance_after":1204.50},
+  {"date":"2024-01-16","merchant":"OPENAI *CHATGPT SUB","merchant_clean":"ChatGPT","amount":20.00,"type":"expense","category":"other","category_ai":"bills","is_subscription":true,"balance_after":null}
 ]`;
 
 Deno.serve(async (req: Request) => {
@@ -54,8 +58,10 @@ Deno.serve(async (req: Request) => {
 
   const { data: { user }, error: authError } = await userClient.auth.getUser();
   if (authError || !user) {
+    console.log('[process-pdf][auth] FAIL:', authError?.message);
     return json({ error: 'Unauthorized' }, 401);
   }
+  console.log('[process-pdf][auth] ok — user:', user.id);
 
   // Service role client — bypasses RLS for DB writes
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -71,6 +77,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: 'Request body must contain upload_id and storage_path' }, 400);
   }
+  console.log(`[process-pdf][request] upload_id=${upload_id} storage_path=${storage_path}`);
 
   // Mark as processing
   await admin
@@ -78,6 +85,7 @@ Deno.serve(async (req: Request) => {
     .update({ status: 'processing' })
     .eq('id', upload_id)
     .eq('user_id', user.id);
+  console.log('[process-pdf][db] pdf_uploads → processing');
 
   // --- Step 1: Download PDF from Storage ---
   const { data: fileBlob, error: downloadError } = await admin.storage
@@ -85,9 +93,11 @@ Deno.serve(async (req: Request) => {
     .download(storage_path);
 
   if (downloadError || !fileBlob) {
+    console.log('[process-pdf][storage] download FAIL:', downloadError?.message);
     await fail(admin, upload_id, 'Failed to download PDF from storage');
     return json({ error: 'Storage download failed' }, 500);
   }
+  console.log('[process-pdf][storage] download ok — size:', fileBlob.size, 'bytes');
 
   // Convert to base64
   const arrayBuffer = await fileBlob.arrayBuffer();
@@ -97,8 +107,10 @@ Deno.serve(async (req: Request) => {
     binary += String.fromCharCode(bytes[i]);
   }
   const base64Pdf = btoa(binary);
+  console.log('[process-pdf][base64] encoded — length:', base64Pdf.length);
 
   // --- Step 2: Call Claude API ---
+  console.log('[process-pdf][claude] sending PDF to Claude for extraction...');
   const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -133,32 +145,41 @@ Deno.serve(async (req: Request) => {
 
   if (!claudeRes.ok) {
     const errText = await claudeRes.text();
+    console.log(`[process-pdf][claude] FAIL ${claudeRes.status}:`, errText.slice(0, 300));
     await fail(admin, upload_id, `Claude API error: ${claudeRes.status} ${errText}`);
     return json({ error: 'Claude API failed' }, 502);
   }
 
   const claudeData = await claudeRes.json();
   const rawText: string = claudeData.content?.[0]?.text?.trim() ?? '';
+  console.log('[process-pdf][claude] raw response (first 500 chars):', rawText.slice(0, 500));
 
   // --- Step 3: Parse extracted transactions ---
   let transactions: Array<{
     date: string;
     merchant: string;
+    merchant_clean: string;
     amount: number;
     type: string;
     category: string;
+    category_ai: string;
+    is_subscription: boolean;
+    balance_after: number | null;
   }>;
 
   try {
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/,'').trim();
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
     transactions = JSON.parse(cleaned);
     if (!Array.isArray(transactions)) throw new Error('Not an array');
-  } catch {
+  } catch (e) {
+    console.log('[process-pdf][parse] FAIL:', (e as Error).message, '| raw:', rawText.slice(0, 200));
     await fail(admin, upload_id, `Could not parse Claude response: ${rawText.slice(0, 200)}`);
     return json({ error: 'Failed to parse Claude response' }, 500);
   }
+  console.log(`[process-pdf][parse] ok — ${transactions.length} transactions extracted. First:`, JSON.stringify(transactions[0] ?? null));
 
   if (transactions.length === 0) {
+    console.log('[process-pdf][parse] no transactions found — marking done');
     await admin
       .from('pdf_uploads')
       .update({ status: 'done', transaction_count: 0 })
@@ -171,26 +192,68 @@ Deno.serve(async (req: Request) => {
     user_id: user.id,
     type: t.type,
     amount: t.amount,
-    merchant: t.merchant.slice(0, 60),
+    merchant: t.merchant.slice(0, 60),  // kept as-is for backwards compat
     category: t.category,
     date: t.date,
     notes: 'Imported from PDF',
+    // Provenance
+    source: 'pdf_upload',
+    upload_id,
+    // Raw bank description — original string before any cleaning
+    raw_description: t.merchant.slice(0, 60),
+    // AI enrichment fields populated at extract time
+    merchant_clean: t.merchant_clean?.slice(0, 40) ?? null,
+    category_ai: t.category_ai ?? null,
+    is_subscription: t.is_subscription ?? false,
+    balance_after: t.balance_after ?? null,
+    enriched_at: new Date().toISOString(),
+    // Will be set to true once a dedicated enrichment pass runs (e.g. category_id lookup)
+    ai_processed: false,
   }));
 
-  const { error: insertError } = await admin.from('transactions').insert(rows);
+  console.log(`[process-pdf][db] upserting ${rows.length} rows (duplicates will be skipped)...`);
+  const { error: insertError } = await admin
+    .from('transactions')
+    .upsert(rows, { onConflict: 'user_id,date,amount,raw_description', ignoreDuplicates: true });
 
   if (insertError) {
+    console.log('[process-pdf][db] upsert FAIL:', insertError.message);
     await fail(admin, upload_id, `DB insert error: ${insertError.message}`);
     return json({ error: 'Failed to save transactions' }, 500);
   }
+  console.log('[process-pdf][db] upsert ok');
 
   // --- Step 5: Mark upload as done ---
   await admin
     .from('pdf_uploads')
     .update({ status: 'done', transaction_count: rows.length })
     .eq('id', upload_id);
+  console.log(`[process-pdf][db] pdf_uploads → done | transaction_count=${rows.length}`);
 
-  return json({ success: true, transaction_count: rows.length });
+  // --- Step 6: Enrich the inserted transactions ---
+  // Calls enrich-transactions to resolve category_id, clean_merchant, subcategory,
+  // is_subscription, and ai_confidence, then sets ai_processed = true on each row.
+  // Non-blocking — a failure here does not affect the PDF upload success response.
+  const enrichRes = await fetch(
+    `${SUPABASE_URL}/functions/v1/enrich-transactions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader,
+      },
+      body: JSON.stringify({ upload_id }),
+    },
+  ).catch(() => null);
+
+  const enriched = enrichRes?.ok ? await enrichRes.json().catch(() => null) : null;
+  console.log('[process-pdf][enrich] result:', JSON.stringify(enriched));
+
+  return json({
+    success: true,
+    transaction_count: rows.length,
+    enrichment: enriched ?? { skipped: true },
+  });
 });
 
 // --- Helpers ---

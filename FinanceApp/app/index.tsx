@@ -16,7 +16,7 @@ export default function SessionCheckScreen() {
       if (cancelled) return;
 
       if (!session.isLoggedIn) {
-        router.replace('/(auth)/logn');
+        router.replace('/(auth)/login');
         return;
       }
 

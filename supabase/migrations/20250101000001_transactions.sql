@@ -16,28 +16,33 @@ create table if not exists public.transactions (
 );
 
 -- Index for common query patterns: all user transactions ordered by date
-create index transactions_user_date_idx on public.transactions (user_id, date desc);
+create index if not exists transactions_user_date_idx on public.transactions (user_id, date desc);
 
 -- Row Level Security: users can only access their own transactions
 alter table public.transactions enable row level security;
 
+drop policy if exists "Users can view their own transactions" on public.transactions;
 create policy "Users can view their own transactions"
   on public.transactions for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert their own transactions" on public.transactions;
 create policy "Users can insert their own transactions"
   on public.transactions for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update their own transactions" on public.transactions;
 create policy "Users can update their own transactions"
   on public.transactions for update
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete their own transactions" on public.transactions;
 create policy "Users can delete their own transactions"
   on public.transactions for delete
   using (auth.uid() = user_id);
 
 -- Auto-update updated_at
+drop trigger if exists transactions_set_updated_at on public.transactions;
 create trigger transactions_set_updated_at
   before update on public.transactions
   for each row execute function public.set_updated_at();

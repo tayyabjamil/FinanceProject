@@ -35,10 +35,11 @@
 
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
-| Add transaction (type, amount, merchant, category, date, notes) | `done` | `feat/-pdf-upload` | Now saves to Supabase `transactions` table |
+| Add transaction (type, amount, merchant, category, date, notes) | `done` | `feat/-pdf-upload` | Saves to Supabase |
 | List / search / filter transactions | `done` | `main` | Filter by type and category |
-| Sync transactions to Supabase | `done` | `feat/-pdf-upload` | `lib/transactions.ts` migrated from AsyncStorage to Supabase; `addTransaction` also writes to Supabase |
-| PDF bank statement upload & parse | `done` | `feat/-pdf-upload` | Full flow working: pick PDF → Storage → edge function → Claude API → transactions inserted |
+| Sync transactions to Supabase | `done` | `feat/-pdf-upload` | `lib/transactions.ts` reads/writes Supabase |
+| PDF bank statement upload & parse | `done` | `feat/-pdf-upload` | Pick PDF → Storage → edge function → Claude → DB |
+| Show AI enrichment in transactions screen | `done` | `feat/AI-tables` | `clean_merchant ?? merchant`, `categories.label ?? category`, subscription badge (`is_subscription`). Search also matches `clean_merchant`. |
 
 ---
 
@@ -47,23 +48,7 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | TrueLayer OpenBanking OAuth | `shelved` | `feat/openbankapis` | Blocked by deep-link redirect issue |
-| PDF upload approach | `done` | `feat/-pdf-upload` | Full end-to-end flow working; upload history shows status per file |
-
----
-
-## Architecture
-
-| Feature | Status | Branch | Notes |
-|---------|--------|--------|-------|
-| Central types file | `done` | `feat/-pdf-upload` | All domain types in `types/index.ts`; imported via `@/types`. Component prop types stay co-located. `lib/` files re-export for backwards compat. |
-
----
-
-## Navigation / UI
-
-| Feature | Status | Branch | Notes |
-|---------|--------|--------|-------|
-| Tab bar — 4 tabs (Home, Upload PDF, Transactions, Profile) | `done` | `feat/-pdf-upload` | Transactions tab added and now live; fetches from Supabase |
+| PDF upload approach | `done` | `feat/-pdf-upload` | Full end-to-end flow working |
 
 ---
 
@@ -72,5 +57,6 @@
 | Feature | Status | Branch | Notes |
 |---------|--------|--------|-------|
 | Insights tab | `planned` | — | Screen exists; content TBD |
-| Chat tab | `planned` | — | Screen exists; LLM integration TBD |
-| AI-powered spend analysis | `planned` | — | Depends on transactions Supabase sync |
+| Chat tab | `done` | `feat/chat-bot` | Full chat UI with bubble layout, suggestion chips, typing indicator; calls `finance-chat` edge function with user JWT |
+| AI enrichment — clean_merchant, category_id, is_subscription, ai_confidence, ai_processed | `done` | `feat/AI-tables` | Full pipeline working: PDF upload → process-pdf → enrich-transactions → category_id, clean_merchant, subcategory, ai_confidence all populated. Transactions screen shows clean_merchant, category label, subscription badge. |
+| AI-powered spend analysis | `planned` | — | Depends on AI enrichment data |

@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -13,35 +14,72 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { R } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 import type { ChatMessage } from '@/types';
 
 const SUGGESTIONS = [
-  'Why am I overspending?',
-  'Can I save £300 this month?',
-  'Where did my money go?',
-  "What's my biggest expense?",
+  'What are my transactions saying?',
+  'Where did most of my money go?',
+  'How much did I spend on subscriptions?',
+  'What are my biggest expenses?',
+  'Where can I save money?',
+  'Any unusual transactions?',
 ];
 
 export default function ChatScreen() {
   const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'ai', text: 'Hey! I\'m your AI finance assistant. Ask me anything about your spending, budgets, or savings goals.', ts: new Date() },
+    {
+      role: 'ai',
+      text: "Hey! I'm your AI finance assistant. Ask me anything about your spending, budgets, or savings goals.",
+      ts: new Date(),
+    },
   ]);
   const listRef = useRef<FlatList>(null);
 
-  const suggestions = useMemo(() => SUGGESTIONS, []);
-
-  function send(msg: string) {
+  async function send(msg: string) {
     const clean = msg.trim();
-    if (!clean) return;
-    const now = new Date();
-    setMessages((m) => [
-      ...m,
-      { role: 'user', text: clean, ts: now },
-      { role: 'ai', text: 'Great question! Real AI insights are coming soon. For now, I can see you\'re on track with your budget this month. 🎉', ts: new Date() },
-    ]);
+    if (!clean || loading) return;
+
+    const userMsg: ChatMessage = { role: 'user', text: clean, ts: new Date() };
+    setMessages((m) => [...m, userMsg]);
     setText('');
+    setLoading(true);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not logged in');
+
+      const res = await fetch(
+        process.env.EXPO_PUBLIC_FINANCE_CHAT_URL ?? `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/finance-chat`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ message: clean }),
+        },
+      );
+
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+
+      const aiMsg: ChatMessage = { role: 'ai', text: body.answer, ts: new Date() };
+      setMessages((m) => [...m, aiMsg]);
+    } catch (err) {
+      const errMsg: ChatMessage = {
+        role: 'ai',
+        text: `Sorry, something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        ts: new Date(),
+      };
+      setMessages((m) => [...m, errMsg]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
   }
 
   return (
@@ -79,18 +117,30 @@ export default function ChatScreen() {
               </View>
             </View>
           )}
+          ListFooterComponent={
+            loading ? (
+              <View style={styles.bubbleWrapAi}>
+                <View style={styles.aiBubbleIcon}>
+                  <Text style={{ fontSize: 12 }}>✨</Text>
+                </View>
+                <View style={[styles.bubble, styles.bubbleAi, styles.loadingBubble]}>
+                  <ActivityIndicator size="small" color={R.accent} />
+                </View>
+              </View>
+            ) : null
+          }
         />
 
         {/* Suggestions */}
         <View style={styles.suggestionsWrap}>
           <FlatList
-            data={suggestions}
+            data={SUGGESTIONS}
             keyExtractor={(s) => s}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.suggestionsRow}
             renderItem={({ item: s }) => (
-              <Pressable style={styles.suggestionChip} onPress={() => send(s)}>
+              <Pressable style={styles.suggestionChip} onPress={() => send(s)} disabled={loading}>
                 <Text style={styles.suggestionText}>{s}</Text>
               </Pressable>
             )}
@@ -108,14 +158,19 @@ export default function ChatScreen() {
             onSubmitEditing={() => send(text)}
             returnKeyType="send"
             multiline
+            editable={!loading}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!text.trim() || loading) && styles.sendBtnDisabled]}
             onPress={() => send(text)}
-            disabled={!text.trim()}
+            disabled={!text.trim() || loading}
             activeOpacity={0.85}
           >
-            <Text style={styles.sendIcon}>↑</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.sendIcon}>↑</Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -188,6 +243,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: R.border,
     borderBottomLeftRadius: 4,
+  },
+  loadingBubble: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
   },
   bubbleText: { color: R.textPrimary, fontSize: 15, lineHeight: 21 },
   bubbleTextUser: { color: '#fff' },
